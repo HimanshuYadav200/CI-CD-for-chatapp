@@ -1,0 +1,91 @@
+pipeline {
+  agent { label 'remote-agent' }
+
+  environment {
+    
+    REPO_URL            = 'https://github.com/HimanshuYadav200/chatapp-modified-ubuntu-22.04.git'
+    BRANCH              = 'main'
+
+    
+    APP_DIR             = '/app'
+    BACKEND_HOST        = '10.2.2.4'
+    SSH_OPTS            = "-o StrictHostKeyChecking=no"
+
+    
+    SONAR_HOST_URL      = 'http://52.180.152.202:9000'
+    SONAR_LOGIN         = credentials('sonar-token')  
+    SONAR_PROJECT_KEY   = 'chatapp'
+    SONAR_PROJECT_NAME  = 'ChatApp'
+    SONAR_PROJECT_VER   = '1.0'
+    SCANNER_BIN         = '/opt/sonar/sonar-scanner/bin/sonar-scanner'
+  }
+
+  stages {
+    stage('Checkout') {
+      steps {
+        git url: REPO_URL, branch: BRANCH
+      }
+    }
+
+    stage('SonarQube Analysis') {
+      steps {
+        withSonarQubeEnv('SonarQube') {
+          sh """
+            ${SCANNER_BIN} \
+              -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
+              -Dsonar.projectName=${SONAR_PROJECT_NAME} \
+              -Dsonar.projectVersion=${SONAR_PROJECT_VER} \
+              -Dsonar.sources=. \
+              -Dsonar.host.url=${SONAR_HOST_URL} \
+              -Dsonar.login=${SONAR_LOGIN}
+          """
+        }
+      }
+    }
+
+
+    stage('Quality Gate') {
+      steps {
+        
+        timeout(time: 10, unit: 'MINUTES') {
+          waitForQualityGate abortPipeline: false
+        }
+      }
+    }
+    
+
+    stage('Deploy') {
+      steps {
+        sh '''
+          set -e
+
+          echo "Copying code to backend…"
+          scp ${SSH_OPTS} -r * azureuser@${BACKEND_HOST}:${APP_DIR}/
+
+          echo "Installing deps…"
+          ssh ${SSH_OPTS} azureuser@${BACKEND_HOST} \\
+            "cd ${APP_DIR} && source venv/bin/activate && pip install -r requirements.txt"
+
+          echo "Running migrations…"
+          ssh ${SSH_OPTS} azureuser@${BACKEND_HOST} \\
+            "cd ${APP_DIR}/fundoo && source ../venv/bin/activate && python3 manage.py makemigrations && python3 manage.py migrate"
+
+          echo "Restarting service…"
+          ssh ${SSH_OPTS} azureuser@${BACKEND_HOST} \\
+            "sudo systemctl restart chatapp.service"
+
+          echo "Done."
+        '''
+      }
+    }
+  }
+
+  post {
+    success {
+      echo 'Build, Quality Gate and Deployment completed successfully.'
+    }
+    failure {
+      echo 'Something failed - check the logs!'
+    }
+  }
+}
