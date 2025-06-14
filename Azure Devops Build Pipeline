@@ -1,0 +1,29 @@
+trigger:
+  branches:
+    include:
+      - main
+
+pool:
+  name: remote-agrnt-pool
+
+variables:
+  APP_DIR: '/app'
+
+stages:
+- stage: Build
+  displayName: 'Build & Package'
+  jobs:
+  - job: PackageCode
+    displayName: 'Checkout & Publish Artifact'
+    steps:
+
+      - checkout: self
+        clean: true
+
+
+      - task: PublishPipelineArtifact@1
+        displayName: 'Publish app code artifact'
+        inputs:
+          targetPath: '$(Build.SourcesDirectory)'   # build-agent pulls code from git here
+          artifact: 'chatapp-code'
+          publishLocation: 'pipeline'
