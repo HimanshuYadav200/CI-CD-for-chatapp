@@ -1,0 +1,20 @@
+echo "Copying code to backend server..."
+scp -r * azureuser@10.2.2.4:/app/
+echo "Code copied to /app on backend."
+
+echo "Installing Python dependencies..."
+ssh azureuser@10.2.2.4 "cd /app && source venv/bin/activate && pip install -r requirements.txt"
+echo "Dependencies installed."
+
+echo "Running makemigrations..."
+ssh azureuser@10.2.2.4 "cd /app/fundoo && source /app/venv/bin/activate && python3 manage.py makemigrations"
+echo "makemigrations complete."
+
+echo "Applying migrations..."
+ssh azureuser@10.2.2.4 "cd /app/fundoo && source /app/venv/bin/activate && python3 manage.py migrate"
+echo "Migrations applied."
+
+echo "Restarting chatapp.service..."
+ssh azureuser@10.2.2.4 "cd /usr/lib/systemd/system"
+ssh azureuser@10.2.2.4 "sudo systemctl restart chatapp.service"
+echo "Service restarted successfully."
